@@ -123,3 +123,12 @@ generate_report()
 print()
 print(f"Report generated at:  {ROOT / 'reports' / 'mission_control.html'}")
 print(f"Phoenix UI:           http://localhost:6006")
+
+# Flush all pending spans to Phoenix before exit
+try:
+    from opentelemetry import trace
+    provider = trace.get_tracer_provider()
+    if hasattr(provider, "shutdown"):
+        provider.shutdown()
+except Exception:
+    pass

@@ -27,9 +27,13 @@ def setup_tracer():
 
         resource = Resource.create({
             "service.name": PHOENIX_PROJECT,
+            "openinference.project.name": PHOENIX_PROJECT,
         })
         provider = TracerProvider(resource=resource)
-        exporter = OTLPSpanExporter(endpoint=OTLP_ENDPOINT)
+        exporter = OTLPSpanExporter(
+            endpoint=OTLP_ENDPOINT,
+            headers={"x-phoenix-project-name": PHOENIX_PROJECT},
+        )
         provider.add_span_processor(BatchSpanProcessor(exporter))
         trace.set_tracer_provider(provider)
         _tracer = trace.get_tracer(PHOENIX_PROJECT)
