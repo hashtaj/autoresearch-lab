@@ -555,7 +555,7 @@ class MuonAdamW(torch.optim.Optimizer):
 # ---------------------------------------------------------------------------
 
 # Model architecture
-ASPECT_RATIO = 64       # model_dim = depth * ASPECT_RATIO
+ASPECT_RATIO = 96       # model_dim = depth * ASPECT_RATIO (4*96=384, dim=384)
 HEAD_DIM = 128          # target head dimension for attention
 WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
 
@@ -563,18 +563,18 @@ WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
 TOTAL_BATCH_SIZE = 2**14 # 16K tokens per optimizer step (MPS: grad_accum=1 with B=8)
 EMBEDDING_LR = 0.6      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
-MATRIX_LR = 0.04        # learning rate for matrix parameters (Muon)
+MATRIX_LR = 0.06        # learning rate for matrix parameters (higher for low-step MPS regime)
 SCALAR_LR = 0.5         # learning rate for per-layer scalars (Adam)
 WEIGHT_DECAY = 0.2      # cautious weight decay for Muon
-ADAM_BETAS = (0.8, 0.95) # Adam beta1, beta2
+ADAM_BETAS = (0.9, 0.95) # Adam beta1, beta2 (more momentum for low-step regime)
 WARMUP_RATIO = 0.0      # fraction of time budget for LR warmup
-WARMDOWN_RATIO = 0.5    # fraction of time budget for LR warmdown
+WARMDOWN_RATIO = 0.35   # fraction of time budget for LR warmdown (less aggressive)
 FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
 # Model size
-DEPTH = 8               # number of transformer layers
-DEVICE_BATCH_SIZE = 8    # per-device batch size (training; MPS: B=8 at T=2048 works)
-EVAL_BATCH_SIZE = 8      # per-device batch size for evaluation (can be larger than DEVICE_BATCH_SIZE)
+DEPTH = 4               # number of transformer layers (reduced from 8 for faster MPS steps)
+DEVICE_BATCH_SIZE = 16   # per-device batch size (training; MPS: B=16 at T=2048 with DEPTH=4)
+EVAL_BATCH_SIZE = 16     # per-device batch size for evaluation
 
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
