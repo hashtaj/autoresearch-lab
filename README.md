@@ -1,4 +1,7 @@
-# autoresearch
+# AutoResearch Lab
+
+Work in progress.  
+This is a fork of the original [karpathy/autoresearch](https://github.com/karpathy/autoresearch) repository.
 
 ![teaser](progress.png)
 
