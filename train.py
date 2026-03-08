@@ -27,7 +27,83 @@ if torch.cuda.is_available():
     except Exception as _e:
         print(f"FA3 unavailable ({_e}), using SDPA fallback")
 
-from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
+import prepare as _prepare
+from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer
+
+# ---------------------------------------------------------------------------
+# MPS-compatible dataloader and evaluation (monkey-patching prepare.py)
+# prepare.py has device="cuda" hardcoded; we replace those functions here
+# ---------------------------------------------------------------------------
+
+def make_dataloader(tokenizer, B, T, split, buffer_size=1000):
+    """MPS/CPU-compatible dataloader (patched version of prepare.make_dataloader)."""
+    import math as _math
+    assert split in ["train", "val"]
+    row_capacity = T + 1
+    batches = _prepare._document_batches(split)
+    bos_token = tokenizer.get_bos_token_id()
+    doc_buffer = []
+    epoch = 1
+
+    def refill_buffer():
+        nonlocal epoch
+        doc_batch, epoch = next(batches)
+        token_lists = tokenizer.encode(doc_batch, prepend=bos_token)
+        doc_buffer.extend(token_lists)
+
+    row_buffer = torch.empty((B, row_capacity), dtype=torch.long)
+
+    while True:
+        for row_idx in range(B):
+            pos = 0
+            while pos < row_capacity:
+                while len(doc_buffer) < buffer_size:
+                    refill_buffer()
+                remaining = row_capacity - pos
+                best_idx = -1
+                best_len = 0
+                for i, doc in enumerate(doc_buffer):
+                    doc_len = len(doc)
+                    if doc_len <= remaining and doc_len > best_len:
+                        best_idx = i
+                        best_len = doc_len
+                if best_idx >= 0:
+                    doc = doc_buffer.pop(best_idx)
+                    row_buffer[row_idx, pos:pos + len(doc)] = torch.tensor(doc, dtype=torch.long)
+                    pos += len(doc)
+                else:
+                    shortest_idx = min(range(len(doc_buffer)), key=lambda i: len(doc_buffer[i]))
+                    doc = doc_buffer.pop(shortest_idx)
+                    row_buffer[row_idx, pos:pos + remaining] = torch.tensor(doc[:remaining], dtype=torch.long)
+                    pos += remaining
+
+        inputs = row_buffer[:, :-1].clone()
+        targets = row_buffer[:, 1:].clone()
+        yield inputs, targets, epoch
+
+
+@torch.no_grad()
+def evaluate_bpb(model, tokenizer, batch_size):
+    """MPS/CPU-compatible BPB evaluation (patched version of prepare.evaluate_bpb)."""
+    import math as _math
+    # Determine device from model
+    _device = next(model.parameters()).device
+    token_bytes = _prepare.get_token_bytes(device=str(_device))
+    val_loader = make_dataloader(tokenizer, batch_size, MAX_SEQ_LEN, "val")
+    steps = _prepare.EVAL_TOKENS // (batch_size * MAX_SEQ_LEN)
+    total_nats = 0.0
+    total_bytes = 0
+    for _ in range(steps):
+        x, y, _ = next(val_loader)
+        x = x.to(_device)
+        y = y.to(_device)
+        loss_flat = model(x, y, reduction='none').view(-1)
+        y_flat = y.view(-1)
+        nbytes = token_bytes[y_flat]
+        mask = nbytes > 0
+        total_nats += (loss_flat * mask).sum().item()
+        total_bytes += nbytes.sum().item()
+    return total_nats / (_math.log(2) * total_bytes)
 
 # ---------------------------------------------------------------------------
 # GPT Model
@@ -537,7 +613,8 @@ if device.type == "cuda":
     model = torch.compile(model, dynamic=False)
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
-x, y, epoch = next(train_loader)  # prefetch first batch
+x, y, epoch = next(train_loader)
+x, y = x.to(device), y.to(device)  # move to device (CPU tensors from patched dataloader)
 
 print(f"Time budget: {TIME_BUDGET}s")
 print(f"Gradient accumulation steps: {grad_accum_steps}")
@@ -580,6 +657,7 @@ while True:
         loss = loss / grad_accum_steps
         loss.backward()
         x, y, epoch = next(train_loader)
+        x, y = x.to(device), y.to(device)
 
     # Progress and schedules
     progress = min(total_training_time / TIME_BUDGET, 1.0)
