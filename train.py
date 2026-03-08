@@ -35,6 +35,43 @@ from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer
 # prepare.py has device="cuda" hardcoded; we replace those functions here
 # ---------------------------------------------------------------------------
 
+# Patch _document_batches to handle missing val shard (use last available shard)
+import os as _os
+import pyarrow.parquet as _pq
+
+def _patched_document_batches(split, tokenizer_batch_size=128):
+    """Patched version: falls back to last available shard if official val shard missing."""
+    parquet_paths = _prepare.list_parquet_files()
+    assert len(parquet_paths) > 0, "No parquet files found. Run prepare.py first."
+    val_path = _os.path.join(_prepare.DATA_DIR, _prepare.VAL_FILENAME)
+    if not _os.path.exists(val_path):
+        # Fallback: use last shard as val, all others as train
+        parquet_paths_sorted = sorted(parquet_paths)
+        fallback_val = parquet_paths_sorted[-1]
+        print(f"[WARNING] Val shard {val_path} not found. Using {fallback_val} as val.")
+        if split == "train":
+            parquet_paths = parquet_paths_sorted[:-1]
+        else:
+            parquet_paths = [fallback_val]
+    else:
+        if split == "train":
+            parquet_paths = [p for p in parquet_paths if p != val_path]
+        else:
+            parquet_paths = [val_path]
+    epoch = 1
+    while True:
+        for filepath in parquet_paths:
+            pf = _pq.ParquetFile(filepath)
+            for rg_idx in range(pf.num_row_groups):
+                rg = pf.read_row_group(rg_idx)
+                batch = rg.column('text').to_pylist()
+                for i in range(0, len(batch), tokenizer_batch_size):
+                    yield batch[i:i+tokenizer_batch_size], epoch
+        epoch += 1
+
+_prepare._document_batches = _patched_document_batches
+
+
 def make_dataloader(tokenizer, B, T, split, buffer_size=1000):
     """MPS/CPU-compatible dataloader (patched version of prepare.make_dataloader)."""
     import math as _math
@@ -523,7 +560,7 @@ HEAD_DIM = 128          # target head dimension for attention
 WINDOW_PATTERN = "SSSL" # sliding window pattern: L=full, S=half context
 
 # Optimization
-TOTAL_BATCH_SIZE = 2**19 # ~524K tokens per optimizer step
+TOTAL_BATCH_SIZE = 2**14 # 16K tokens per optimizer step (MPS: grad_accum=1 with B=8)
 EMBEDDING_LR = 0.6      # learning rate for token embeddings (Adam)
 UNEMBEDDING_LR = 0.004  # learning rate for lm_head (Adam)
 MATRIX_LR = 0.04        # learning rate for matrix parameters (Muon)
@@ -536,7 +573,8 @@ FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 
 # Model size
 DEPTH = 8               # number of transformer layers
-DEVICE_BATCH_SIZE = 8    # per-device batch size (reduce if OOM)
+DEVICE_BATCH_SIZE = 8    # per-device batch size (training; MPS: B=8 at T=2048 works)
+EVAL_BATCH_SIZE = 8      # per-device batch size for evaluation (can be larger than DEVICE_BATCH_SIZE)
 
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
@@ -719,7 +757,7 @@ total_tokens = step * TOTAL_BATCH_SIZE
 # Final eval
 model.eval()
 with autocast_ctx:
-    val_bpb = evaluate_bpb(model, tokenizer, DEVICE_BATCH_SIZE)
+    val_bpb = evaluate_bpb(model, tokenizer, EVAL_BATCH_SIZE)
 
 # Final summary
 t_end = time.time()
