@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  backend:
+    build: 
+      context: .
+      dockerfile: app/backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app/backend:/app/backend
+      - ./:/workspace # Mount upstream loop context
+    environment:
+      - SQLITE_DB_PATH=/workspace/data/experiments.db
+    # TODO: Claude Code to implement the Dockerfile
+
+  frontend:
+    build:
+      context: ./app/frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./app/frontend:/app/frontend
+    # TODO: Claude Code to implement the Dockerfile
+    
+  # Optional: Phoenix server for local telemetry
+  # phoenix:
+  #   image: arizeai/phoenix:latest
+  #   ports:
+  #     - "6006:6006"
