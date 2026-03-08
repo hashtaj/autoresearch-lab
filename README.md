@@ -3,12 +3,7 @@
 Work in progress.  
 This is a fork of the original [karpathy/autoresearch](https://github.com/karpathy/autoresearch) repository.
 
-## Scaffolded Structure
 
-- `app/backend/`: FastAPI skeleton logic for managing runs, interacting with SQLite, logging telemetry via Phoenix/Arize, and orchestrating the upstream `train.py`.
-- `app/frontend/`: Next.js skeleton structure designed to serve as the user interface, visualizing timelines and graphs over the experiment loop.
-- `docs/`: Setup notes, architecture overviews, and a detailed Handoff note for Claude Code.
-- `scripts/`: Local dev and bootstrapping script skeletons.
 
 ## Upstream Concept
 
