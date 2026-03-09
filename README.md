@@ -1,66 +1,281 @@
-# AutoResearch Lab
+# autoresearch-lab
 
-> A fork of [Andrej Karpathy's autoresearch](https://github.com/karpathy/autoresearch) — extended with **Apple Silicon support**, **Arize Phoenix observability**, and a **Mission Control dashboard**.
+Exploring **autonomous experiment loops for machine learning systems**.
 
-An autonomous ML research loop where a Claude agent modifies model code, trains for 5 minutes, evaluates the result, keeps improvements, discards regressions, and repeats — indefinitely.
+This project is a fork of Andrej Karpathy's **autoresearch** with additions that make experiments **observable and runnable locally**.
+
+The goal is simple:
+
+> Let an AI system run experiments on itself — and make the process visible.
 
 ---
 
-## Mission Control
+# Overview
 
-Every experiment run is tracked in a live dashboard showing score progression, best result, and recent history.
+Karpathy’s original project demonstrates a powerful idea:
+
+An AI agent can autonomously improve a model by repeatedly running experiments.
+
+Each iteration follows a loop:
+
+1. Propose a change to the training setup  
+2. Train the model for a fixed time budget  
+3. Measure validation performance  
+4. Keep improvements  
+5. Repeat
+
+Over time the system explores the search space and discovers better configurations.
+
+This repository keeps that experiment loop intact while adding **observability, reporting, and local execution support**.
+
+---
+
+# Mission Control
+
+Every experiment run is tracked in a **Mission Control dashboard** showing score progression, the best result discovered, and recent experiment history.
 
 ![Mission Control Dashboard](assets/mission-control.png)
+
+The report is generated locally after experiment runs and provides a quick overview of how the system evolves during experimentation.
+
+The report file is written to:
+
+```
+reports/mission_control.html
+```
+
+---
+
+# What This Fork Adds
+
+This fork focuses on making the experiment loop easier to **run locally and understand visually**.
+
+---
+
+## Apple Silicon Support
+
+The training code now supports:
+
+- CUDA (NVIDIA GPUs)
+- MPS (Apple Silicon GPUs)
+- CPU fallback
+
+This allows the experiment loop to run locally on Apple Silicon machines such as **Mac Studio or Mac Mini**.
 
 ---
 
 ## Arize Phoenix Tracing
 
-Every experiment emits OpenTelemetry spans to Arize Phoenix — giving full trace visibility into each step: `experiment.run` → `experiment.modify_code` → `experiment.train` → `experiment.evaluate` → `experiment.commit_result`.
+Experiment execution is traced using **Arize Phoenix**, an LLM and ML observability platform.
+
+Every experiment emits **OpenTelemetry spans** to Phoenix, providing full trace visibility into the experiment lifecycle.
+
+This allows inspection of each stage of the autonomous experiment loop:
+
+```
+experiment.run
+→ experiment.modify_code
+→ experiment.train
+→ experiment.evaluate
+→ experiment.commit_result
+```
+
+Example Phoenix trace view:
 
 ![Phoenix Trace Inspector](assets/phoenix-traces.png)
 
----
+Phoenix UI runs locally at:
 
-## What this fork adds
+```
+http://localhost:6006
+```
 
-### 🍎 Apple Silicon (MPS) support
-Runs natively on M1/M2/M3 Macs. Device detection falls back CUDA → MPS → CPU automatically. CUDA-only operations (FA3 flash attention, `torch.compile`) are replaced with MPS-compatible equivalents. Full 5-minute experiment loop works unchanged.
+This makes it possible to understand:
 
-### 📡 Arize Phoenix tracing
-`app/backend/arize_logger.py` wraps OpenTelemetry and emits structured spans to a local Phoenix instance. Every experiment step is a traceable span with attributes like `experiment.score`, `device`, `training_time`. Fails silently if Phoenix is offline.
-
-### 📊 Mission Control report
-`scripts/generate_report.py` reads experiment results and renders a static HTML dashboard — timeline chart, best-result card, run statistics, and a direct link to Phoenix traces. No server required.
-
-### 🧠 Research learnings log
-`learnings.md` is a living document the agent updates after every experiment: what it tried, result, mechanistic hypothesis, and next idea. After the full 1-hour session the agent writes an `END-OF-SESSION RESEARCH SUMMARY` with ranked findings, key insights, active hypotheses, advice for the next researcher, and a time-to-target estimate.
+- what change an experiment attempted
+- how long training ran
+- how evaluation behaved
+- which experiment produced improvements
 
 ---
 
-## Quick start
+# Running the Project Locally
 
-→ **[Setup guide](docs/setup.md)**
-
----
-
-## How the research loop works
-
-The agent follows `program.md` — a set of instructions that define the experiment loop:
-
-1. Modify `train.py` with one idea
-2. Commit and run: `uv run train.py` (5-minute budget)
-3. Read `val_bpb` — the validation bits-per-byte metric (lower = better)
-4. If improved → keep the commit and advance. If not → revert.
-5. Update `results.tsv` and `learnings.md`
-6. Repeat indefinitely
-
-After ≥12 experiments and ≥60 minutes, the agent writes a full research summary with hypotheses, ranked findings, and estimated time to reach further improvements.
+The project can run on Apple Silicon or CUDA systems.
 
 ---
 
-## Upstream
+## 1. Install Dependencies
 
-Original concept and core engine by **Andrej Karpathy**: [karpathy/autoresearch](https://github.com/karpathy/autoresearch)
+Using **uv** (recommended):
 
-> The upstream files (`train.py`, `prepare.py`, `program.md`, `pyproject.toml`) are kept clean at the repo root so future upstream merges remain straightforward.
+```bash
+uv sync
+```
+
+or using pip:
+
+```bash
+pip install -e .
+```
+
+---
+
+## 2. Start Phoenix
+
+Start the Phoenix observability server:
+
+```bash
+phoenix serve
+```
+
+Open the UI:
+
+```
+http://localhost:6006
+```
+
+---
+
+## 3. Prepare the Dataset
+
+```bash
+uv run prepare.py
+```
+
+This downloads and preprocesses the dataset used by the experiments.
+
+---
+
+## 4. Run Experiments
+
+```bash
+uv run train.py
+```
+
+The experiment loop will begin running iterations.
+
+Each iteration:
+
+- modifies the training setup
+- runs a short training experiment
+- evaluates the result
+
+---
+
+## 5. Generate Mission Control Report
+
+After experiments run:
+
+```bash
+python scripts/generate_report.py
+```
+
+Open the report:
+
+```
+reports/mission_control.html
+```
+
+---
+
+# Example Workflow
+
+Typical workflow when running experiments locally:
+
+```bash
+phoenix serve
+
+uv run prepare.py
+uv run train.py
+
+python scripts/generate_report.py
+```
+
+Then inspect:
+
+```
+reports/mission_control.html
+```
+
+and experiment traces in:
+
+```
+http://localhost:6006
+```
+
+---
+
+# Future Work: Evaluation with Phoenix
+
+This repository currently uses Phoenix primarily for **experiment tracing**.
+
+However, Phoenix also provides powerful **evaluation capabilities** that could be integrated in future iterations.
+
+Possible extensions include:
+
+- automated evaluation of experiment outputs  
+- comparing experiment variants across runs  
+- reliability metrics for generated results  
+- deeper failure analysis using Phoenix evaluation tools  
+
+This would allow the experiment loop to evolve from simple metric tracking into a more comprehensive **experiment evaluation and analysis system**.
+
+---
+
+# Repository Structure
+
+```
+autoresearch-lab
+│
+train.py
+prepare.py
+program.md
+│
+app/backend
+  runner.py
+  arize_logger.py
+  experiment_store.py
+│
+results/
+reports/
+│
+scripts/
+generate_report.py
+run_demo.py
+│
+assets/
+  mission-control.png
+  phoenix-traces.png
+```
+
+---
+
+# Project Status
+
+This project is experimental.
+
+The goal is to explore:
+
+- autonomous experiment loops
+- ML experiment observability
+- experiment visualization
+
+Expect rough edges as the system evolves.
+
+---
+
+# Credit
+
+Original project by **Andrej Karpathy**
+
+https://github.com/karpathy/autoresearch
+
+This repository builds on that work by adding **local execution support and observability tooling**.
+
+---
+
+# License
+
+Same license as the upstream project.
+
