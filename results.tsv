@@ -1,0 +1,2 @@
+commit	val_bpb	memory_gb	status	description
+25ffda9	1.884818	0.0	keep	baseline MPS DEPTH=8 TOTAL=2^14 B=8 fallback-val-shard
