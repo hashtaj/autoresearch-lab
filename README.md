@@ -1,6 +1,12 @@
 # autoresearch-lab
 
-Exploring **autonomous experiment loops for machine learning systems**.
+
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![Platform](https://img.shields.io/badge/platform-Apple%20Silicon%20%7C%20CUDA-lightgrey)
+![Observability](https://img.shields.io/badge/observability-Arize%20Phoenix-purple)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+Exploring autonomous experiment loops for machine learning systems.
 
 This project is a fork of Andrej Karpathy's **autoresearch** with additions that make experiments **observable and runnable locally**.
 
